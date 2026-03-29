@@ -1,69 +1,113 @@
-let scene = new THREE.Scene();
+import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
+import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
+import { OBJLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/OBJLoader.js";
+import { MTLLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/MTLLoader.js";
 
-let camera = new THREE.PerspectiveCamera(
-    75,
-    window.innerWidth / window.innerHeight,
-    0.1,
-    10000
+const statusBox = document.getElementById("status");
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x222222);
+
+const camera = new THREE.PerspectiveCamera(
+  60,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  1000000
 );
 
-let renderer = new THREE.WebGLRenderer();
-
-renderer.setSize(
-    window.innerWidth,
-    window.innerHeight
-);
-
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
 document.body.appendChild(renderer.domElement);
 
-// lighting
-let light = new THREE.HemisphereLight(0xffffff, 0x444444, 1);
-scene.add(light);
+const light1 = new THREE.HemisphereLight(0xffffff, 0x444444, 1.5);
+scene.add(light1);
 
-// controls (mouse look)
-let controls = new THREE.PointerLockControls(camera, document.body);
+const light2 = new THREE.DirectionalLight(0xffffff, 1);
+light2.position.set(100, 200, 100);
+scene.add(light2);
 
-document.body.addEventListener("click", () => controls.lock());
+const grid = new THREE.GridHelper(500, 50);
+scene.add(grid);
 
-scene.add(controls.getObject());
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+camera.position.set(100, 100, 100);
 
-// starting position
-camera.position.set(0, 80, 0);
+statusBox.textContent = "Loading materials...";
 
-// load model
-let loader = new THREE.GLTFLoader();
+const mtlLoader = new MTLLoader();
+mtlLoader.setPath("./");
 
-loader.load(
-    "model.gltf", // change this if your file name is different
+mtlLoader.load(
+  "model.mtl",
+  function (materials) {
+    materials.preload();
 
-    function (gltf) {
-        gltf.scene.scale.set(1, 1, 1); // adjust if needed
-        scene.add(gltf.scene);
-        console.log("Model loaded");
-    },
+    const objLoader = new OBJLoader();
+    objLoader.setMaterials(materials);
+    objLoader.setPath("./");
 
-    undefined,
+    statusBox.textContent = "Loading model...";
 
-    function (error) {
-        console.error("Error loading model:", error);
+    objLoader.load(
+      "model.obj",
+      function (obj) {
+        scene.add(obj);
+
+        const box = new THREE.Box3().setFromObject(obj);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+
+        controls.target.copy(center);
+
+        const maxDim = Math.max(size.x, size.y, size.z) || 200;
+        camera.position.set(
+          center.x + maxDim * 0.8,
+          center.y + maxDim * 0.5,
+          center.z + maxDim * 0.8
+        );
+
+        camera.near = 0.1;
+        camera.far = Math.max(1000000, maxDim * 20);
+        camera.updateProjectionMatrix();
+
+        statusBox.textContent = "Model loaded with textures";
+      },
+      function (xhr) {
+        if (xhr.total) {
+          const percent = (xhr.loaded / xhr.total) * 100;
+          statusBox.textContent = `Loading model... ${percent.toFixed(1)}%`;
+        }
+      },
+      function (error) {
+        console.error("Error loading OBJ:", error);
+        statusBox.textContent = "Failed to load OBJ. Check console.";
+      }
+    );
+  },
+  function (xhr) {
+    if (xhr.total) {
+      const percent = (xhr.loaded / xhr.total) * 100;
+      statusBox.textContent = `Loading materials... ${percent.toFixed(1)}%`;
     }
+  },
+  function (error) {
+    console.error("Error loading MTL:", error);
+    statusBox.textContent = "Failed to load MTL. Check console.";
+  }
 );
 
-// simple gravity
-let velocityY = 0;
+window.addEventListener("resize", function () {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
 
 function animate() {
-    requestAnimationFrame(animate);
-
-    velocityY -= 0.01;
-    camera.position.y += velocityY;
-
-    if (camera.position.y < 70) {
-        camera.position.y = 70;
-        velocityY = 0;
-    }
-
-    renderer.render(scene, camera);
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
 }
 
 animate();
