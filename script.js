@@ -20,18 +20,19 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(window.devicePixelRatio);
 document.body.appendChild(renderer.domElement);
 
-const light1 = new THREE.HemisphereLight(0xffffff, 0x444444, 1.5);
-scene.add(light1);
+const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.5);
+scene.add(hemiLight);
 
-const light2 = new THREE.DirectionalLight(0xffffff, 1);
-light2.position.set(100, 200, 100);
-scene.add(light2);
+const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+dirLight.position.set(100, 200, 100);
+scene.add(dirLight);
 
 const grid = new THREE.GridHelper(500, 50);
 scene.add(grid);
 
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
+
 camera.position.set(100, 100, 100);
 
 statusBox.textContent = "Loading materials...";
@@ -73,11 +74,16 @@ mtlLoader.load(
         camera.updateProjectionMatrix();
 
         statusBox.textContent = "Model loaded with textures";
+        console.log("Model loaded with textures");
+        console.log("Center:", center);
+        console.log("Size:", size);
       },
       function (xhr) {
         if (xhr.total) {
           const percent = (xhr.loaded / xhr.total) * 100;
           statusBox.textContent = `Loading model... ${percent.toFixed(1)}%`;
+        } else {
+          statusBox.textContent = "Loading model...";
         }
       },
       function (error) {
@@ -90,6 +96,8 @@ mtlLoader.load(
     if (xhr.total) {
       const percent = (xhr.loaded / xhr.total) * 100;
       statusBox.textContent = `Loading materials... ${percent.toFixed(1)}%`;
+    } else {
+      statusBox.textContent = "Loading materials...";
     }
   },
   function (error) {
