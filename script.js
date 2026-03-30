@@ -1,598 +1,398 @@
-import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
-import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
-import { OBJLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/OBJLoader.js";
-import { MTLLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/MTLLoader.js";
-
-const menu = document.getElementById("menu");
-const statusBox = document.getElementById("status");
-const hud = document.getElementById("hud");
-const currentModeText = document.getElementById("currentMode");
-const modeButtons = document.querySelectorAll(".modeButton[data-mode]");
-
-const roundNumberText = document.getElementById("roundNumber");
-const totalScoreText = document.getElementById("totalScore");
-
-const openMapBtn = document.getElementById("openMapBtn");
-const mapPanel = document.getElementById("mapPanel");
-const mapViewport = document.getElementById("mapViewport");
-const mapInner = document.getElementById("mapInner");
-const guessMarker = document.getElementById("guessMarker");
-const zoomText = document.getElementById("mapZoomText");
-const zoomInBtn = document.getElementById("zoomInBtn");
-const zoomOutBtn = document.getElementById("zoomOutBtn");
-const submitGuessBtn = document.getElementById("submitGuessBtn");
-const closeMapBtn = document.getElementById("closeMapBtn");
-
-const resultsUI = document.getElementById("resultsUI");
-const resultText = document.getElementById("resultText");
-const resultGuessMarker = document.getElementById("resultGuessMarker");
-const actualMarker = document.getElementById("actualMarker");
-const nextRoundBtn = document.getElementById("nextRoundBtn");
-
-let scene;
-let camera;
-let renderer;
-let controls;
-let animationStarted = false;
-let modelLoaded = false;
-let selectedMode = null;
-let worldRoot = null;
-let worldBounds = null;
-
-let currentRound = null;
-let currentGuess = null;
-let totalScore = 0;
-let roundNumber = 0;
-const usedRoundIndexes = [];
-
-const PLAYER_EYE_HEIGHT = 2;
-const LOOK_DISTANCE = 18;
-
-const MAP_BASE_WIDTH = 1000;
-const MAP_BASE_HEIGHT = 562.5;
-let mapZoom = 1;
-const MIN_MAP_ZOOM = 1;
-const MAX_MAP_ZOOM = 5;
-let mapPanX = 0;
-let mapPanY = 0;
-let isMapDragging = false;
-let mapDragMoved = false;
-let mapDragStartX = 0;
-let mapDragStartY = 0;
-let mapStartPanX = 0;
-let mapStartPanY = 0;
-
-const raycaster = new THREE.Raycaster();
-
-const roundLocations = [
-  {
-    name: "Spawn Island",
-    world: { x: 0, z: 0, fallbackY: 80 },
-    map: { x: 50, y: 50 }
-  },
-  {
-    name: "Shop Area",
-    world: { x: 120, z: -40, fallbackY: 82 },
-    map: { x: 68, y: 42 }
-  },
-  {
-    name: "Farm",
-    world: { x: -90, z: 160, fallbackY: 78 },
-    map: { x: 28, y: 75 }
-  },
-  {
-    name: "Bridge",
-    world: { x: 210, z: 120, fallbackY: 84 },
-    map: { x: 82, y: 62 }
-  }
-];
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-function initScene() {
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x222222);
-
-  camera = new THREE.PerspectiveCamera(
-    60,
-    window.innerWidth / window.innerHeight,
-    0.1,
-    1000000
-  );
-
-  renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  document.body.appendChild(renderer.domElement);
-
-  const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.5);
-  scene.add(hemiLight);
-
-  const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-  dirLight.position.set(100, 200, 100);
-  scene.add(dirLight);
-
-  const grid = new THREE.GridHelper(500, 50);
-  grid.visible = false;
-  scene.add(grid);
-
-  controls = new OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.enablePan = false;
-  controls.enableZoom = false;
-  controls.rotateSpeed = 0.75;
-
-  camera.position.set(100, 100, 100);
-  controls.target.set(120, 100, 120);
-  controls.update();
-
-  window.addEventListener("resize", onWindowResize);
-
-  setupMapUI();
-}
-
-function setupMapUI() {
-  mapInner.style.width = `${MAP_BASE_WIDTH}px`;
-  mapInner.style.height = `${MAP_BASE_HEIGHT}px`;
-  updateMapTransform();
-
-  openMapBtn.addEventListener("click", toggleMapPanel);
-  closeMapBtn.addEventListener("click", closeMapPanel);
-  submitGuessBtn.addEventListener("click", submitGuess);
-
-  zoomInBtn.addEventListener("click", () => zoomMapAtViewportCenter(0.25));
-  zoomOutBtn.addEventListener("click", () => zoomMapAtViewportCenter(-0.25));
-
-  mapViewport.addEventListener(
-    "wheel",
-    (event) => {
-      event.preventDefault();
-      const rect = mapViewport.getBoundingClientRect();
-      const pointX = event.clientX - rect.left;
-      const pointY = event.clientY - rect.top;
-      const delta = event.deltaY < 0 ? 0.2 : -0.2;
-      zoomMapAtPoint(delta, pointX, pointY);
-    },
-    { passive: false }
-  );
-
-  mapViewport.addEventListener("mousedown", (event) => {
-    if (event.button !== 0) return;
-    isMapDragging = true;
-    mapDragMoved = false;
-    mapDragStartX = event.clientX;
-    mapDragStartY = event.clientY;
-    mapStartPanX = mapPanX;
-    mapStartPanY = mapPanY;
-    mapViewport.classList.add("dragging");
-  });
-
-  window.addEventListener("mousemove", (event) => {
-    if (!isMapDragging) return;
-
-    const dx = event.clientX - mapDragStartX;
-    const dy = event.clientY - mapDragStartY;
-
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-      mapDragMoved = true;
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Minecraft GeoGuessr</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #111;
+      font-family: Arial, sans-serif;
     }
 
-    mapPanX = mapStartPanX + dx;
-    mapPanY = mapStartPanY + dy;
-    clampMapPan();
-    updateMapTransform();
-  });
-
-  window.addEventListener("mouseup", () => {
-    isMapDragging = false;
-    mapViewport.classList.remove("dragging");
-  });
-
-  mapViewport.addEventListener("touchstart", (event) => {
-    if (event.touches.length !== 1) return;
-    isMapDragging = true;
-    mapDragMoved = false;
-    mapDragStartX = event.touches[0].clientX;
-    mapDragStartY = event.touches[0].clientY;
-    mapStartPanX = mapPanX;
-    mapStartPanY = mapPanY;
-  }, { passive: true });
-
-  window.addEventListener("touchmove", (event) => {
-    if (!isMapDragging || event.touches.length !== 1) return;
-
-    const dx = event.touches[0].clientX - mapDragStartX;
-    const dy = event.touches[0].clientY - mapDragStartY;
-
-    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
-      mapDragMoved = true;
+    body {
+      user-select: none;
     }
 
-    mapPanX = mapStartPanX + dx;
-    mapPanY = mapStartPanY + dy;
-    clampMapPan();
-    updateMapTransform();
-  }, { passive: true });
+    #status {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      z-index: 20;
+      color: white;
+      background: rgba(0, 0, 0, 0.75);
+      padding: 8px 12px;
+      border-radius: 8px;
+      display: none;
+      max-width: 320px;
+    }
 
-  window.addEventListener("touchend", () => {
-    isMapDragging = false;
-  });
+    #menu {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background:
+        linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.75)),
+        radial-gradient(circle at top, #2a2a2a, #111 70%);
+    }
 
-  mapViewport.addEventListener("click", (event) => {
-    if (mapDragMoved) return;
+    #menuCard {
+      width: min(90vw, 500px);
+      background: rgba(20, 20, 20, 0.92);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 18px;
+      padding: 28px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+      color: white;
+      text-align: center;
+    }
 
-    const rect = mapViewport.getBoundingClientRect();
-    const viewportX = event.clientX - rect.left;
-    const viewportY = event.clientY - rect.top;
+    #menuCard h1 {
+      margin: 0 0 10px;
+      font-size: 2rem;
+    }
 
-    const localX = (viewportX - mapPanX) / mapZoom;
-    const localY = (viewportY - mapPanY) / mapZoom;
+    #menuCard p {
+      margin: 0 0 22px;
+      color: #cfcfcf;
+      line-height: 1.45;
+    }
 
-    const x = clamp((localX / MAP_BASE_WIDTH) * 100, 0, 100);
-    const y = clamp((localY / MAP_BASE_HEIGHT) * 100, 0, 100);
+    .modeButtons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 18px;
+    }
 
-    currentGuess = { x, y };
-    setMarkerPosition(guessMarker, currentGuess);
-  });
+    .modeButton {
+      border: none;
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-size: 1rem;
+      cursor: pointer;
+      background: #2d6cdf;
+      color: white;
+      transition: transform 0.15s ease, opacity 0.15s ease;
+    }
 
-  nextRoundBtn.addEventListener("click", () => {
-    resultsUI.style.display = "none";
-    startNewRound();
-  });
-}
+    .modeButton:hover {
+      transform: translateY(-2px);
+      opacity: 0.95;
+    }
 
-function onWindowResize() {
-  if (!camera || !renderer) return;
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  clampMapPan();
-  updateMapTransform();
-}
+    .modeButton.secondary {
+      background: #333;
+    }
 
-function updateMapTransform() {
-  mapInner.style.transform = `translate(${mapPanX}px, ${mapPanY}px) scale(${mapZoom})`;
-  zoomText.textContent = `Zoom: ${Math.round(mapZoom * 100)}%`;
-}
+    #hud {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      z-index: 20;
+      color: white;
+      background: rgba(0,0,0,0.75);
+      padding: 10px 14px;
+      border-radius: 8px;
+      display: none;
+      min-width: 200px;
+    }
 
-function clampMapPan() {
-  const viewportWidth = mapViewport.clientWidth;
-  const viewportHeight = mapViewport.clientHeight;
-  const scaledWidth = MAP_BASE_WIDTH * mapZoom;
-  const scaledHeight = MAP_BASE_HEIGHT * mapZoom;
+    #hud div + div {
+      margin-top: 6px;
+    }
 
-  if (scaledWidth <= viewportWidth) {
-    mapPanX = (viewportWidth - scaledWidth) / 2;
-  } else {
-    const minPanX = viewportWidth - scaledWidth;
-    mapPanX = clamp(mapPanX, minPanX, 0);
-  }
+    #openMapBtn {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      z-index: 25;
+      display: none;
+    }
 
-  if (scaledHeight <= viewportHeight) {
-    mapPanY = (viewportHeight - scaledHeight) / 2;
-  } else {
-    const minPanY = viewportHeight - scaledHeight;
-    mapPanY = clamp(mapPanY, minPanY, 0);
-  }
-}
+    #mapPanel {
+      position: fixed;
+      right: 20px;
+      bottom: 74px;
+      width: min(420px, calc(100vw - 40px));
+      height: min(320px, calc(100vh - 140px));
+      z-index: 30;
+      display: none;
+      background: rgba(20, 20, 20, 0.96);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+      overflow: hidden;
+    }
 
-function centerMapOnPercent(xPercent, yPercent) {
-  const viewportWidth = mapViewport.clientWidth;
-  const viewportHeight = mapViewport.clientHeight;
-  const targetX = (xPercent / 100) * MAP_BASE_WIDTH * mapZoom;
-  const targetY = (yPercent / 100) * MAP_BASE_HEIGHT * mapZoom;
+    #mapPanelHeader {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      color: white;
+      background: rgba(255,255,255,0.03);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
 
-  mapPanX = viewportWidth / 2 - targetX;
-  mapPanY = viewportHeight / 2 - targetY;
+    #mapPanelTitle {
+      font-weight: 700;
+    }
 
-  clampMapPan();
-  updateMapTransform();
-}
+    #mapZoomText {
+      color: #cfcfcf;
+      font-size: 0.9rem;
+    }
 
-function zoomMapAtPoint(delta, pointX, pointY) {
-  const oldZoom = mapZoom;
-  const newZoom = clamp(mapZoom + delta, MIN_MAP_ZOOM, MAX_MAP_ZOOM);
-  if (newZoom === oldZoom) return;
+    #mapViewport {
+      position: relative;
+      width: 100%;
+      height: calc(100% - 112px);
+      overflow: hidden;
+      background: #222;
+      cursor: grab;
+      touch-action: none;
+    }
 
-  const worldX = (pointX - mapPanX) / oldZoom;
-  const worldY = (pointY - mapPanY) / oldZoom;
+    #mapViewport.dragging {
+      cursor: grabbing;
+    }
 
-  mapZoom = newZoom;
-  mapPanX = pointX - worldX * mapZoom;
-  mapPanY = pointY - worldY * mapZoom;
+    #mapInner {
+      position: absolute;
+      top: 0;
+      left: 0;
+      transform-origin: top left;
+    }
 
-  clampMapPan();
-  updateMapTransform();
-}
+    #guessMap {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+      user-select: none;
+      -webkit-user-drag: none;
+      pointer-events: none;
+    }
 
-function zoomMapAtViewportCenter(delta) {
-  const rect = mapViewport.getBoundingClientRect();
-  zoomMapAtPoint(delta, rect.width / 2, rect.height / 2);
-}
+    #guessMarker {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #e53935;
+      border: 3px solid white;
+      transform: translate(-50%, -50%);
+      display: none;
+      pointer-events: none;
+      box-sizing: border-box;
+    }
 
-function loadWorld() {
-  statusBox.style.display = "block";
-  statusBox.textContent = "Loading materials...";
+    #mapControls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      padding: 12px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.02);
+    }
 
-  const mtlLoader = new MTLLoader();
-  mtlLoader.setPath("./");
+    #resultsUI {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 60;
+      background: rgba(0,0,0,0.82);
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      box-sizing: border-box;
+    }
 
-  mtlLoader.load(
-    "model.mtl",
-    (materials) => {
-      materials.preload();
+    .panelCard {
+      background: rgba(20, 20, 20, 0.96);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 18px;
+      padding: 22px;
+      width: min(92vw, 950px);
+      color: white;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+    }
 
-      const objLoader = new OBJLoader();
-      objLoader.setMaterials(materials);
-      objLoader.setPath("./");
+    .panelCard h2 {
+      margin-top: 0;
+    }
 
-      statusBox.textContent = "Loading model...";
+    .panelCard p {
+      color: #d4d4d4;
+    }
 
-      objLoader.load(
-        "model.obj",
-        (obj) => {
-          worldRoot = obj;
-          scene.add(obj);
+    #resultMapContainer {
+      position: relative;
+      margin: 20px auto;
+      width: min(88vw, 900px);
+      aspect-ratio: 16 / 9;
+      background: #111;
+      overflow: hidden;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
 
-          worldBounds = new THREE.Box3().setFromObject(obj);
-          const center = worldBounds.getCenter(new THREE.Vector3());
-          const size = worldBounds.getSize(new THREE.Vector3());
-          const maxDim = Math.max(size.x, size.y, size.z) || 200;
+    #resultMap {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      user-select: none;
+      -webkit-user-drag: none;
+      pointer-events: none;
+      background: #111;
+    }
 
-          controls.target.copy(center);
-          camera.position.set(
-            center.x + maxDim * 0.8,
-            center.y + maxDim * 0.5,
-            center.z + maxDim * 0.8
-          );
+    #resultGuessMarker,
+    #actualMarker {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      display: none;
+      pointer-events: none;
+      border: 3px solid white;
+      box-sizing: border-box;
+    }
 
-          camera.near = 0.1;
-          camera.far = Math.max(1000000, maxDim * 20);
-          camera.updateProjectionMatrix();
-          controls.update();
+    #resultGuessMarker {
+      background: #e53935;
+    }
 
-          modelLoaded = true;
-          statusBox.textContent = "World loaded";
+    #actualMarker {
+      background: #2ecc71;
+    }
 
-          applyModeRules();
-          startNewRound();
-        },
-        (xhr) => {
-          if (xhr.total) {
-            const percent = (xhr.loaded / xhr.total) * 100;
-            statusBox.textContent = `Loading model... ${percent.toFixed(1)}%`;
-          } else {
-            statusBox.textContent = "Loading model...";
-          }
-        },
-        (error) => {
-          console.error("Error loading OBJ:", error);
-          statusBox.textContent = "Failed to load OBJ. Check console.";
-        }
-      );
-    },
-    (xhr) => {
-      if (xhr.total) {
-        const percent = (xhr.loaded / xhr.total) * 100;
-        statusBox.textContent = `Loading materials... ${percent.toFixed(1)}%`;
-      } else {
-        statusBox.textContent = "Loading materials...";
+    .buttonRow {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+
+    canvas {
+      display: block;
+      cursor: grab;
+    }
+
+    canvas.dragging {
+      cursor: grabbing;
+    }
+
+    @media (max-width: 700px) {
+      #mapPanel {
+        right: 10px;
+        bottom: 64px;
+        width: calc(100vw - 20px);
+        height: 300px;
       }
-    },
-    (error) => {
-      console.error("Error loading MTL:", error);
-      statusBox.textContent = "Failed to load MTL. Check console.";
+
+      #openMapBtn {
+        right: 10px;
+        bottom: 10px;
+      }
+
+      #hud {
+        right: 10px;
+        top: 10px;
+        max-width: calc(100vw - 140px);
+      }
     }
-  );
-}
+  </style>
 
-function applyModeRules() {
-  if (!modelLoaded) return;
-
-  if (selectedMode === "free") {
-    statusBox.textContent = "Free Explore mode";
-  } else if (selectedMode === "classic") {
-    statusBox.textContent = "Classic mode";
-  } else if (selectedMode === "timed") {
-    statusBox.textContent = "Timed mode";
-  } else if (selectedMode === "hardcore") {
-    statusBox.textContent = "Hardcore mode";
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/": "https://cdn.jsdelivr.net/npm/three@0.160.0/"
+    }
   }
-}
+  </script>
+</head>
+<body>
+  <div id="menu">
+    <div id="menuCard">
+      <h1>Skyblock GeoGuessr</h1>
+      <p>
+        Pick a mode to start. The world will only load after you choose,
+        which helps the site run smoother.
+      </p>
 
-function updateHud() {
-  roundNumberText.textContent = String(roundNumber);
-  totalScoreText.textContent = String(totalScore);
-}
+      <div class="modeButtons">
+        <button class="modeButton" data-mode="classic">Classic</button>
+        <button class="modeButton" data-mode="timed">Timed</button>
+        <button class="modeButton secondary" data-mode="free">Free Explore</button>
+        <button class="modeButton secondary" data-mode="hardcore">Hardcore</button>
+      </div>
+    </div>
+  </div>
 
-function pickRandomRound() {
-  if (usedRoundIndexes.length >= roundLocations.length) {
-    usedRoundIndexes.length = 0;
-  }
+  <div id="status">Starting...</div>
 
-  let index;
-  do {
-    index = Math.floor(Math.random() * roundLocations.length);
-  } while (
-    usedRoundIndexes.includes(index) &&
-    usedRoundIndexes.length < roundLocations.length
-  );
+  <div id="hud">
+    <div>Mode: <span id="currentMode">None</span></div>
+    <div>Round: <span id="roundNumber">0</span></div>
+    <div>Total Score: <span id="totalScore">0</span></div>
+  </div>
 
-  usedRoundIndexes.push(index);
-  return roundLocations[index];
-}
+  <button id="openMapBtn" class="modeButton">Map</button>
 
-function getGroundY(x, z, fallbackY = 80) {
-  if (!worldRoot || !worldBounds) return fallbackY;
+  <div id="mapPanel">
+    <div id="mapPanelHeader">
+      <div id="mapPanelTitle">Place Your Guess</div>
+      <div id="mapZoomText">Zoom: 100%</div>
+    </div>
 
-  const originY = worldBounds.max.y + 1000;
-  raycaster.set(
-    new THREE.Vector3(x, originY, z),
-    new THREE.Vector3(0, -1, 0)
-  );
+    <div id="mapViewport">
+      <div id="mapInner">
+        <img id="guessMap" src="topdown-map.jpg" alt="Top-down map" />
+        <div id="guessMarker"></div>
+      </div>
+    </div>
 
-  const hits = raycaster.intersectObject(worldRoot, true);
+    <div id="mapControls">
+      <button id="zoomOutBtn" class="modeButton secondary" type="button">-</button>
+      <button id="zoomInBtn" class="modeButton secondary" type="button">+</button>
+      <button id="submitGuessBtn" class="modeButton" type="button">Submit Guess</button>
+      <button id="closeMapBtn" class="modeButton secondary" type="button">Close</button>
+    </div>
+  </div>
 
-  if (hits.length > 0) {
-    return hits[0].point.y;
-  }
+  <div id="resultsUI">
+    <div class="panelCard">
+      <h2>Round Result</h2>
+      <p id="resultText">Result goes here.</p>
 
-  return fallbackY;
-}
+      <div id="resultMapContainer">
+        <img id="resultMap" src="topdown-map.jpg" alt="Result map" />
+        <div id="resultGuessMarker"></div>
+        <div id="actualMarker"></div>
+      </div>
 
-function moveCameraToRound(round) {
-  if (!round || !camera || !controls) return;
+      <div class="buttonRow">
+        <button id="nextRoundBtn" class="modeButton">Next Round</button>
+      </div>
+    </div>
+  </div>
 
-  const x = round.world.x;
-  const z = round.world.z;
-  const groundY = getGroundY(x, z, round.world.fallbackY ?? 80);
-  const eyeY = groundY + PLAYER_EYE_HEIGHT;
-
-  camera.position.set(x, eyeY, z);
-
-  const angle = Math.random() * Math.PI * 2;
-  controls.target.set(
-    x + Math.cos(angle) * LOOK_DISTANCE,
-    eyeY,
-    z + Math.sin(angle) * LOOK_DISTANCE
-  );
-
-  controls.update();
-}
-
-function startNewRound() {
-  currentRound = pickRandomRound();
-  currentGuess = null;
-  roundNumber += 1;
-
-  guessMarker.style.display = "none";
-  resultGuessMarker.style.display = "none";
-  actualMarker.style.display = "none";
-  closeMapPanel();
-  resultsUI.style.display = "none";
-
-  mapZoom = 1.5;
-  centerMapOnPercent(50, 50);
-
-  moveCameraToRound(currentRound);
-  updateHud();
-
-  statusBox.style.display = "block";
-  statusBox.textContent = `Round ${roundNumber}: ${selectedMode} mode`;
-}
-
-function toggleMapPanel() {
-  if (!modelLoaded || !currentRound) return;
-
-  if (mapPanel.style.display === "block") {
-    closeMapPanel();
-  } else {
-    openMapPanel();
-  }
-}
-
-function openMapPanel() {
-  mapPanel.style.display = "block";
-
-  if (currentGuess) {
-    centerMapOnPercent(currentGuess.x, currentGuess.y);
-  } else {
-    centerMapOnPercent(50, 50);
-  }
-}
-
-function closeMapPanel() {
-  mapPanel.style.display = "none";
-}
-
-function setMarkerPosition(marker, guess) {
-  marker.style.display = "block";
-  marker.style.left = `${guess.x}%`;
-  marker.style.top = `${guess.y}%`;
-}
-
-function calculateGuessDistance(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-function calculateScore(distance) {
-  const maxDistance = 50;
-  const clamped = Math.min(distance, maxDistance);
-  return Math.round(5000 * (1 - clamped / maxDistance));
-}
-
-function showResults(distance, score) {
-  resultText.textContent =
-    `You were ${distance.toFixed(1)} map units away. ` +
-    `You earned ${score} points. ` +
-    `Actual location: ${currentRound.name}.`;
-
-  setMarkerPosition(resultGuessMarker, currentGuess);
-  setMarkerPosition(actualMarker, currentRound.map);
-
-  resultsUI.style.display = "flex";
-}
-
-function submitGuess() {
-  if (!currentGuess || !currentRound) {
-    alert("Place a guess on the map first.");
-    return;
-  }
-
-  const distance = calculateGuessDistance(currentGuess, currentRound.map);
-  const score = calculateScore(distance);
-
-  totalScore += score;
-  updateHud();
-
-  closeMapPanel();
-  showResults(distance, score);
-}
-
-function animate() {
-  requestAnimationFrame(animate);
-
-  if (controls) {
-    controls.update();
-  }
-
-  if (renderer && scene && camera) {
-    renderer.render(scene, camera);
-  }
-}
-
-function startGame(mode) {
-  selectedMode = mode;
-  currentModeText.textContent = mode;
-  menu.style.display = "none";
-  hud.style.display = "block";
-  openMapBtn.style.display = "block";
-
-  if (!scene) {
-    initScene();
-  }
-
-  if (!animationStarted) {
-    animationStarted = true;
-    animate();
-  }
-
-  if (!modelLoaded) {
-    loadWorld();
-  } else {
-    statusBox.style.display = "block";
-    applyModeRules();
-    startNewRound();
-  }
-}
-
-modeButtons.forEach((button) => {
-  button.addEventListener("click", () => {
-    const mode = button.dataset.mode;
-    startGame(mode);
-  });
-});
+  <script type="module" src="./script.js"></script>
+</body>
+</html>
