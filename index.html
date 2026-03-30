@@ -156,13 +156,20 @@
       position: relative;
       width: 100%;
       height: calc(100% - 112px);
-      overflow: auto;
+      overflow: hidden;
       background: #222;
-      cursor: crosshair;
+      cursor: grab;
+      touch-action: none;
+    }
+
+    #mapViewport.dragging {
+      cursor: grabbing;
     }
 
     #mapInner {
-      position: relative;
+      position: absolute;
+      top: 0;
+      left: 0;
       transform-origin: top left;
     }
 
@@ -216,7 +223,7 @@
       border: 1px solid rgba(255,255,255,0.08);
       border-radius: 18px;
       padding: 22px;
-      width: min(92vw, 900px);
+      width: min(92vw, 950px);
       color: white;
       text-align: center;
       box-shadow: 0 20px 60px rgba(0,0,0,0.45);
@@ -233,9 +240,9 @@
     #resultMapContainer {
       position: relative;
       margin: 20px auto;
-      width: min(80vw, 700px);
+      width: min(88vw, 900px);
       aspect-ratio: 16 / 9;
-      background: #333;
+      background: #111;
       overflow: hidden;
       border-radius: 12px;
       border: 1px solid rgba(255,255,255,0.08);
@@ -244,11 +251,12 @@
     #resultMap {
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
       display: block;
       user-select: none;
       -webkit-user-drag: none;
       pointer-events: none;
+      background: #111;
     }
 
     #resultGuessMarker,
