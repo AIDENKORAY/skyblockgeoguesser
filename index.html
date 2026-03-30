@@ -14,6 +14,10 @@
       font-family: Arial, sans-serif;
     }
 
+    body {
+      user-select: none;
+    }
+
     #status {
       position: fixed;
       top: 10px;
@@ -24,12 +28,13 @@
       padding: 8px 12px;
       border-radius: 8px;
       display: none;
+      max-width: 320px;
     }
 
     #menu {
       position: fixed;
       inset: 0;
-      z-index: 30;
+      z-index: 50;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -97,27 +102,108 @@
       padding: 10px 14px;
       border-radius: 8px;
       display: none;
-      min-width: 180px;
+      min-width: 200px;
     }
 
     #hud div + div {
       margin-top: 6px;
     }
 
-    #openGuessBtn {
+    #openMapBtn {
       position: fixed;
+      right: 20px;
       bottom: 20px;
-      left: 20px;
       z-index: 25;
       display: none;
     }
 
-    #guessUI,
+    #mapPanel {
+      position: fixed;
+      right: 20px;
+      bottom: 74px;
+      width: min(420px, calc(100vw - 40px));
+      height: min(320px, calc(100vh - 140px));
+      z-index: 30;
+      display: none;
+      background: rgba(20, 20, 20, 0.96);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+      overflow: hidden;
+    }
+
+    #mapPanelHeader {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      color: white;
+      background: rgba(255,255,255,0.03);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    #mapPanelTitle {
+      font-weight: 700;
+    }
+
+    #mapZoomText {
+      color: #cfcfcf;
+      font-size: 0.9rem;
+    }
+
+    #mapViewport {
+      position: relative;
+      width: 100%;
+      height: calc(100% - 112px);
+      overflow: auto;
+      background: #222;
+      cursor: crosshair;
+    }
+
+    #mapInner {
+      position: relative;
+      transform-origin: top left;
+    }
+
+    #guessMap {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: fill;
+      user-select: none;
+      -webkit-user-drag: none;
+      pointer-events: none;
+    }
+
+    #guessMarker {
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #e53935;
+      border: 3px solid white;
+      transform: translate(-50%, -50%);
+      display: none;
+      pointer-events: none;
+      box-sizing: border-box;
+    }
+
+    #mapControls {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      padding: 12px;
+      border-top: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.02);
+    }
+
     #resultsUI {
       display: none;
       position: fixed;
       inset: 0;
-      z-index: 40;
+      z-index: 60;
       background: rgba(0,0,0,0.82);
       align-items: center;
       justify-content: center;
@@ -144,7 +230,6 @@
       color: #d4d4d4;
     }
 
-    #guessMapContainer,
     #resultMapContainer {
       position: relative;
       margin: 20px auto;
@@ -156,11 +241,6 @@
       border: 1px solid rgba(255,255,255,0.08);
     }
 
-    #guessMapContainer {
-      cursor: crosshair;
-    }
-
-    #guessMap,
     #resultMap {
       width: 100%;
       height: 100%;
@@ -168,23 +248,22 @@
       display: block;
       user-select: none;
       -webkit-user-drag: none;
+      pointer-events: none;
     }
 
-    #guessMarker,
-    #actualMarker,
-    #resultGuessMarker {
-      display: none;
+    #resultGuessMarker,
+    #actualMarker {
       position: absolute;
       width: 18px;
       height: 18px;
       border-radius: 50%;
       transform: translate(-50%, -50%);
+      display: none;
       pointer-events: none;
       border: 3px solid white;
       box-sizing: border-box;
     }
 
-    #guessMarker,
     #resultGuessMarker {
       background: #e53935;
     }
@@ -203,6 +282,31 @@
 
     canvas {
       display: block;
+      cursor: grab;
+    }
+
+    canvas.dragging {
+      cursor: grabbing;
+    }
+
+    @media (max-width: 700px) {
+      #mapPanel {
+        right: 10px;
+        bottom: 64px;
+        width: calc(100vw - 20px);
+        height: 300px;
+      }
+
+      #openMapBtn {
+        right: 10px;
+        bottom: 10px;
+      }
+
+      #hud {
+        right: 10px;
+        top: 10px;
+        max-width: calc(100vw - 140px);
+      }
     }
   </style>
 
@@ -241,22 +345,26 @@
     <div>Total Score: <span id="totalScore">0</span></div>
   </div>
 
-  <button id="openGuessBtn" class="modeButton">Guess</button>
+  <button id="openMapBtn" class="modeButton">Map</button>
 
-  <div id="guessUI">
-    <div class="panelCard">
-      <h2>Make Your Guess</h2>
-      <p>Click on the map where you think you are.</p>
+  <div id="mapPanel">
+    <div id="mapPanelHeader">
+      <div id="mapPanelTitle">Place Your Guess</div>
+      <div id="mapZoomText">Zoom: 100%</div>
+    </div>
 
-      <div id="guessMapContainer">
+    <div id="mapViewport">
+      <div id="mapInner">
         <img id="guessMap" src="topdown-map.jpg" alt="Top-down map" />
         <div id="guessMarker"></div>
       </div>
+    </div>
 
-      <div class="buttonRow">
-        <button id="submitGuessBtn" class="modeButton">Submit Guess</button>
-        <button id="closeGuessBtn" class="modeButton secondary">Cancel</button>
-      </div>
+    <div id="mapControls">
+      <button id="zoomOutBtn" class="modeButton secondary" type="button">-</button>
+      <button id="zoomInBtn" class="modeButton secondary" type="button">+</button>
+      <button id="submitGuessBtn" class="modeButton" type="button">Submit Guess</button>
+      <button id="closeMapBtn" class="modeButton secondary" type="button">Close</button>
     </div>
   </div>
 
@@ -266,7 +374,7 @@
       <p id="resultText">Result goes here.</p>
 
       <div id="resultMapContainer">
-        <img id="resultMap" src="./topdown-map.jpg" alt="Result map" />
+        <img id="resultMap" src="topdown-map.jpg" alt="Result map" />
         <div id="resultGuessMarker"></div>
         <div id="actualMarker"></div>
       </div>
