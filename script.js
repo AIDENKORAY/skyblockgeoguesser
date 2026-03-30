@@ -1,4 +1,5 @@
 import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
+import { OrbitControls } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/OrbitControls.js";
 import { OBJLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/OBJLoader.js";
 import { MTLLoader } from "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/loaders/MTLLoader.js";
 
@@ -31,6 +32,7 @@ const nextRoundBtn = document.getElementById("nextRoundBtn");
 let scene;
 let camera;
 let renderer;
+let controls;
 let animationStarted = false;
 let modelLoaded = false;
 let selectedMode = null;
@@ -43,15 +45,8 @@ let totalScore = 0;
 let roundNumber = 0;
 const usedRoundIndexes = [];
 
-let yaw = 0;
-let pitch = 0;
-let isDragging = false;
-let lastMouseX = 0;
-let lastMouseY = 0;
-
-const LOOK_SENSITIVITY = 0.003;
-const MAX_PITCH = Math.PI / 2 - 0.05;
-const PLAYER_EYE_HEIGHT = 1.65;
+const PLAYER_EYE_HEIGHT = 2;
+const LOOK_DISTANCE = 20;
 
 const MAP_BASE_WIDTH = 1000;
 const MAP_BASE_HEIGHT = 562.5;
@@ -84,12 +79,16 @@ const roundLocations = [
   }
 ];
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
 function initScene() {
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x222222);
 
   camera = new THREE.PerspectiveCamera(
-    75,
+    60,
     window.innerWidth / window.innerHeight,
     0.1,
     1000000
@@ -107,27 +106,26 @@ function initScene() {
   dirLight.position.set(100, 200, 100);
   scene.add(dirLight);
 
-  camera.position.set(0, 80, 0);
-  updateCameraRotation();
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.enablePan = false;
+  controls.enableZoom = false;
+  controls.rotateSpeed = 0.7;
+  controls.minDistance = 0.01;
+  controls.maxDistance = 0.01;
+
+  camera.position.set(100, 100, 100);
+  controls.target.set(120, 100, 120);
+  controls.update();
 
   window.addEventListener("resize", onWindowResize);
-
-  renderer.domElement.addEventListener("mousedown", onPointerDown);
-  window.addEventListener("mousemove", onPointerMove);
-  window.addEventListener("mouseup", onPointerUp);
-
-  renderer.domElement.addEventListener("touchstart", onTouchStart, { passive: false });
-  window.addEventListener("touchmove", onTouchMove, { passive: false });
-  window.addEventListener("touchend", onTouchEnd);
-
-  renderer.domElement.addEventListener("contextmenu", (event) => {
-    event.preventDefault();
-  });
 
   setupMapUI();
 }
 
 function setupMapUI() {
+  if (!mapInner) return;
+
   mapInner.style.width = `${MAP_BASE_WIDTH}px`;
   mapInner.style.height = `${MAP_BASE_HEIGHT}px`;
   updateMapZoom();
@@ -185,81 +183,6 @@ function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
-}
-
-function onPointerDown(event) {
-  if (!modelLoaded || mapPanel.style.display === "block" || resultsUI.style.display === "flex") return;
-  isDragging = true;
-  lastMouseX = event.clientX;
-  lastMouseY = event.clientY;
-  renderer.domElement.classList.add("dragging");
-}
-
-function onPointerMove(event) {
-  if (!isDragging) return;
-
-  const dx = event.clientX - lastMouseX;
-  const dy = event.clientY - lastMouseY;
-
-  lastMouseX = event.clientX;
-  lastMouseY = event.clientY;
-
-  yaw -= dx * LOOK_SENSITIVITY;
-  pitch -= dy * LOOK_SENSITIVITY;
-  pitch = clamp(pitch, -MAX_PITCH, MAX_PITCH);
-
-  updateCameraRotation();
-}
-
-function onPointerUp() {
-  isDragging = false;
-  if (renderer) {
-    renderer.domElement.classList.remove("dragging");
-  }
-}
-
-function onTouchStart(event) {
-  if (!modelLoaded || mapPanel.style.display === "block" || resultsUI.style.display === "flex") return;
-  if (event.touches.length !== 1) return;
-
-  event.preventDefault();
-  isDragging = true;
-  lastMouseX = event.touches[0].clientX;
-  lastMouseY = event.touches[0].clientY;
-}
-
-function onTouchMove(event) {
-  if (!isDragging || event.touches.length !== 1) return;
-
-  event.preventDefault();
-
-  const dx = event.touches[0].clientX - lastMouseX;
-  const dy = event.touches[0].clientY - lastMouseY;
-
-  lastMouseX = event.touches[0].clientX;
-  lastMouseY = event.touches[0].clientY;
-
-  yaw -= dx * LOOK_SENSITIVITY;
-  pitch -= dy * LOOK_SENSITIVITY;
-  pitch = clamp(pitch, -MAX_PITCH, MAX_PITCH);
-
-  updateCameraRotation();
-}
-
-function onTouchEnd() {
-  isDragging = false;
-}
-
-function updateCameraRotation() {
-  if (!camera) return;
-  camera.rotation.order = "YXZ";
-  camera.rotation.y = yaw;
-  camera.rotation.x = pitch;
-  camera.rotation.z = 0;
-}
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
 }
 
 function loadWorld() {
@@ -388,7 +311,7 @@ function getGroundY(x, z, fallbackY = 80) {
 }
 
 function moveCameraToRound(round) {
-  if (!round || !camera) return;
+  if (!round || !camera || !controls) return;
 
   const groundY = getGroundY(
     round.world.x,
@@ -396,15 +319,16 @@ function moveCameraToRound(round) {
     round.world.fallbackY ?? 80
   );
 
-  camera.position.set(
-    round.world.x,
-    groundY + PLAYER_EYE_HEIGHT,
-    round.world.z
-  );
+  const eyeY = groundY + PLAYER_EYE_HEIGHT;
 
-  yaw = Math.random() * Math.PI * 2;
-  pitch = 0;
-  updateCameraRotation();
+  camera.position.set(round.world.x, eyeY, round.world.z);
+
+  const angle = Math.random() * Math.PI * 2;
+  const targetX = round.world.x + Math.cos(angle) * LOOK_DISTANCE;
+  const targetZ = round.world.z + Math.sin(angle) * LOOK_DISTANCE;
+
+  controls.target.set(targetX, eyeY, targetZ);
+  controls.update();
 }
 
 function startNewRound() {
@@ -517,6 +441,10 @@ function submitGuess() {
 
 function animate() {
   requestAnimationFrame(animate);
+
+  if (controls) {
+    controls.update();
+  }
 
   if (renderer && scene && camera) {
     renderer.render(scene, camera);
