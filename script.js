@@ -46,7 +46,7 @@ let roundNumber = 0;
 const usedRoundIndexes = [];
 
 const PLAYER_EYE_HEIGHT = 2;
-const LOOK_DISTANCE = 20;
+const LOOK_DISTANCE = 18;
 
 const MAP_BASE_WIDTH = 1000;
 const MAP_BASE_HEIGHT = 562.5;
@@ -106,13 +106,15 @@ function initScene() {
   dirLight.position.set(100, 200, 100);
   scene.add(dirLight);
 
+  const grid = new THREE.GridHelper(500, 50);
+  grid.visible = false;
+  scene.add(grid);
+
   controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
   controls.enablePan = false;
   controls.enableZoom = false;
-  controls.rotateSpeed = 0.7;
-  controls.minDistance = 0.01;
-  controls.maxDistance = 0.01;
+  controls.rotateSpeed = 0.75;
 
   camera.position.set(100, 100, 100);
   controls.target.set(120, 100, 120);
@@ -124,8 +126,6 @@ function initScene() {
 }
 
 function setupMapUI() {
-  if (!mapInner) return;
-
   mapInner.style.width = `${MAP_BASE_WIDTH}px`;
   mapInner.style.height = `${MAP_BASE_HEIGHT}px`;
   updateMapZoom();
@@ -133,6 +133,7 @@ function setupMapUI() {
   openMapBtn.addEventListener("click", toggleMapPanel);
   closeMapBtn.addEventListener("click", closeMapPanel);
   submitGuessBtn.addEventListener("click", submitGuess);
+
   zoomInBtn.addEventListener("click", () => zoomMapAtCenter(0.25));
   zoomOutBtn.addEventListener("click", () => zoomMapAtCenter(-0.25));
 
@@ -194,7 +195,7 @@ function loadWorld() {
 
   mtlLoader.load(
     "model.mtl",
-    function (materials) {
+    (materials) => {
       materials.preload();
 
       const objLoader = new OBJLoader();
@@ -205,7 +206,7 @@ function loadWorld() {
 
       objLoader.load(
         "model.obj",
-        function (obj) {
+        (obj) => {
           worldRoot = obj;
           scene.add(obj);
 
@@ -214,20 +215,25 @@ function loadWorld() {
           const size = worldBounds.getSize(new THREE.Vector3());
           const maxDim = Math.max(size.x, size.y, size.z) || 200;
 
+          controls.target.copy(center);
+          camera.position.set(
+            center.x + maxDim * 0.8,
+            center.y + maxDim * 0.5,
+            center.z + maxDim * 0.8
+          );
+
           camera.near = 0.1;
           camera.far = Math.max(1000000, maxDim * 20);
           camera.updateProjectionMatrix();
+          controls.update();
 
           modelLoaded = true;
           statusBox.textContent = "World loaded";
-          console.log("Model loaded with textures");
-          console.log("Center:", center);
-          console.log("Size:", size);
 
           applyModeRules();
           startNewRound();
         },
-        function (xhr) {
+        (xhr) => {
           if (xhr.total) {
             const percent = (xhr.loaded / xhr.total) * 100;
             statusBox.textContent = `Loading model... ${percent.toFixed(1)}%`;
@@ -235,13 +241,13 @@ function loadWorld() {
             statusBox.textContent = "Loading model...";
           }
         },
-        function (error) {
+        (error) => {
           console.error("Error loading OBJ:", error);
           statusBox.textContent = "Failed to load OBJ. Check console.";
         }
       );
     },
-    function (xhr) {
+    (xhr) => {
       if (xhr.total) {
         const percent = (xhr.loaded / xhr.total) * 100;
         statusBox.textContent = `Loading materials... ${percent.toFixed(1)}%`;
@@ -249,7 +255,7 @@ function loadWorld() {
         statusBox.textContent = "Loading materials...";
       }
     },
-    function (error) {
+    (error) => {
       console.error("Error loading MTL:", error);
       statusBox.textContent = "Failed to load MTL. Check console.";
     }
@@ -313,21 +319,20 @@ function getGroundY(x, z, fallbackY = 80) {
 function moveCameraToRound(round) {
   if (!round || !camera || !controls) return;
 
-  const groundY = getGroundY(
-    round.world.x,
-    round.world.z,
-    round.world.fallbackY ?? 80
-  );
-
+  const x = round.world.x;
+  const z = round.world.z;
+  const groundY = getGroundY(x, z, round.world.fallbackY ?? 80);
   const eyeY = groundY + PLAYER_EYE_HEIGHT;
 
-  camera.position.set(round.world.x, eyeY, round.world.z);
+  camera.position.set(x, eyeY, z);
 
   const angle = Math.random() * Math.PI * 2;
-  const targetX = round.world.x + Math.cos(angle) * LOOK_DISTANCE;
-  const targetZ = round.world.z + Math.sin(angle) * LOOK_DISTANCE;
+  controls.target.set(
+    x + Math.cos(angle) * LOOK_DISTANCE,
+    eyeY,
+    z + Math.sin(angle) * LOOK_DISTANCE
+  );
 
-  controls.target.set(targetX, eyeY, targetZ);
   controls.update();
 }
 
