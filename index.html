@@ -94,9 +94,107 @@
       z-index: 20;
       color: white;
       background: rgba(0,0,0,0.75);
-      padding: 8px 12px;
+      padding: 10px 14px;
       border-radius: 8px;
       display: none;
+      min-width: 180px;
+    }
+
+    #hud div + div {
+      margin-top: 6px;
+    }
+
+    #openGuessBtn {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      z-index: 25;
+      display: none;
+    }
+
+    #guessUI,
+    #resultsUI {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 40;
+      background: rgba(0,0,0,0.82);
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+
+    .panelCard {
+      background: rgba(20, 20, 20, 0.96);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 18px;
+      padding: 22px;
+      width: min(92vw, 900px);
+      color: white;
+      text-align: center;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.45);
+    }
+
+    .panelCard h2 {
+      margin-top: 0;
+    }
+
+    .panelCard p {
+      color: #d4d4d4;
+    }
+
+    #mapContainer {
+      position: relative;
+      margin: 20px auto;
+      width: min(80vw, 700px);
+      aspect-ratio: 16 / 9;
+      background: #333;
+      overflow: hidden;
+      border-radius: 12px;
+      cursor: crosshair;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    #guessMap,
+    #resultMap {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+
+    #guessMarker,
+    #actualMarker,
+    #resultGuessMarker {
+      display: none;
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      border: 3px solid white;
+      box-sizing: border-box;
+    }
+
+    #guessMarker,
+    #resultGuessMarker {
+      background: #e53935;
+    }
+
+    #actualMarker {
+      background: #2ecc71;
+    }
+
+    .buttonRow {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-top: 12px;
     }
 
     canvas {
@@ -132,7 +230,48 @@
   </div>
 
   <div id="status">Starting...</div>
-  <div id="hud">Mode: <span id="currentMode">None</span></div>
+
+  <div id="hud">
+    <div>Mode: <span id="currentMode">None</span></div>
+    <div>Round: <span id="roundNumber">0</span></div>
+    <div>Total Score: <span id="totalScore">0</span></div>
+  </div>
+
+  <button id="openGuessBtn" class="modeButton">Guess</button>
+
+  <div id="guessUI">
+    <div class="panelCard">
+      <h2>Make Your Guess</h2>
+      <p>Click on the map where you think you are.</p>
+
+      <div id="mapContainer">
+        <img id="guessMap" src="./topdown-map.jpg" alt="Top-down map" />
+        <div id="guessMarker"></div>
+      </div>
+
+      <div class="buttonRow">
+        <button id="submitGuessBtn" class="modeButton">Submit Guess</button>
+        <button id="closeGuessBtn" class="modeButton secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="resultsUI">
+    <div class="panelCard">
+      <h2>Round Result</h2>
+      <p id="resultText">Result goes here.</p>
+
+      <div id="mapContainer" style="cursor: default;">
+        <img id="resultMap" src="./topdown-map.jpg" alt="Result map" />
+        <div id="resultGuessMarker"></div>
+        <div id="actualMarker"></div>
+      </div>
+
+      <div class="buttonRow">
+        <button id="nextRoundBtn" class="modeButton">Next Round</button>
+      </div>
+    </div>
+  </div>
 
   <script type="module" src="./script.js"></script>
 </body>
