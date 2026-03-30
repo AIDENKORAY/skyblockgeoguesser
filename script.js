@@ -97,11 +97,8 @@ const roundLocations = [
   }
 ];
 
-// Anchor point from your portal
 const PORTAL_WORLD = { x: 273, z: 203 };
 const PORTAL_MAP = { x: 52, y: 48 };
-
-// Tweak this if distances feel too small or too large
 const BLOCKS_PER_PERCENT = 6;
 
 function clamp(value, min, max) {
@@ -126,10 +123,10 @@ function getMarkerSizePercent() {
   };
 }
 
-function styleMarkerAsBlock(marker) {
+function styleMarkerAsBlock(marker, scale = 1) {
   const size = getMarkerSizePercent();
-  marker.style.width = `${size.widthPercent}%`;
-  marker.style.height = `${size.heightPercent}%`;
+  marker.style.width = `${size.widthPercent * scale}%`;
+  marker.style.height = `${size.heightPercent * scale}%`;
   marker.style.borderRadius = "2px";
 }
 
@@ -170,9 +167,9 @@ function initScene() {
   controls.target.set(120, 100, 120);
   controls.update();
 
-  styleMarkerAsBlock(guessMarker);
-  styleMarkerAsBlock(resultGuessMarker);
-  styleMarkerAsBlock(actualMarker);
+  styleMarkerAsBlock(guessMarker, 1);
+  styleMarkerAsBlock(resultGuessMarker, 2.4);
+  styleMarkerAsBlock(actualMarker, 2.4);
 
   window.addEventListener("resize", onWindowResize);
 
@@ -614,11 +611,11 @@ function drawResultLine(fromGuess, toGuess) {
   resultLine = document.createElement("div");
   resultLine.style.position = "absolute";
   resultLine.style.height = "4px";
-  resultLine.style.background = "rgba(255,255,255,0.9)";
+  resultLine.style.background = "rgba(255,255,255,0.35)";
   resultLine.style.transformOrigin = "0 50%";
   resultLine.style.pointerEvents = "none";
   resultLine.style.borderRadius = "999px";
-  resultLine.style.boxShadow = "0 0 6px rgba(0,0,0,0.4)";
+  resultLine.style.boxShadow = "0 0 4px rgba(0,0,0,0.18)";
   resultLine.style.zIndex = "1";
 
   const x1 = (fromGuess.x / 100) * resultMapContainer.clientWidth;
@@ -663,6 +660,9 @@ function showResults(distanceBlocks, score) {
     `You were ${Math.round(distanceBlocks)} blocks away. ` +
     `You earned ${score} points. ` +
     `Actual location: ${currentRound.name}.`;
+
+  styleMarkerAsBlock(resultGuessMarker, 2.4);
+  styleMarkerAsBlock(actualMarker, 2.4);
 
   setMarkerPosition(resultGuessMarker, currentGuess);
   setMarkerPosition(actualMarker, currentRound.map);
