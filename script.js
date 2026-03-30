@@ -53,6 +53,14 @@ const MAP_BASE_HEIGHT = 562.5;
 let mapZoom = 1;
 const MIN_MAP_ZOOM = 1;
 const MAX_MAP_ZOOM = 5;
+let mapPanX = 0;
+let mapPanY = 0;
+let isMapDragging = false;
+let mapDragMoved = false;
+let mapDragStartX = 0;
+let mapDragStartY = 0;
+let mapStartPanX = 0;
+let mapStartPanY = 0;
 
 const raycaster = new THREE.Raycaster();
 
@@ -128,46 +136,102 @@ function initScene() {
 function setupMapUI() {
   mapInner.style.width = `${MAP_BASE_WIDTH}px`;
   mapInner.style.height = `${MAP_BASE_HEIGHT}px`;
-  updateMapZoom();
+  updateMapTransform();
 
   openMapBtn.addEventListener("click", toggleMapPanel);
   closeMapBtn.addEventListener("click", closeMapPanel);
   submitGuessBtn.addEventListener("click", submitGuess);
 
-  zoomInBtn.addEventListener("click", () => zoomMapAtCenter(0.25));
-  zoomOutBtn.addEventListener("click", () => zoomMapAtCenter(-0.25));
+  zoomInBtn.addEventListener("click", () => zoomMapAtViewportCenter(0.25));
+  zoomOutBtn.addEventListener("click", () => zoomMapAtViewportCenter(-0.25));
 
   mapViewport.addEventListener(
     "wheel",
     (event) => {
       event.preventDefault();
-
       const rect = mapViewport.getBoundingClientRect();
-      const oldZoom = mapZoom;
+      const pointX = event.clientX - rect.left;
+      const pointY = event.clientY - rect.top;
       const delta = event.deltaY < 0 ? 0.2 : -0.2;
-      const newZoom = clamp(mapZoom + delta, MIN_MAP_ZOOM, MAX_MAP_ZOOM);
-
-      if (newZoom === oldZoom) return;
-
-      const mouseViewportX = event.clientX - rect.left;
-      const mouseViewportY = event.clientY - rect.top;
-
-      const contentX = (mapViewport.scrollLeft + mouseViewportX) / oldZoom;
-      const contentY = (mapViewport.scrollTop + mouseViewportY) / oldZoom;
-
-      mapZoom = newZoom;
-      updateMapZoom();
-
-      mapViewport.scrollLeft = contentX * mapZoom - mouseViewportX;
-      mapViewport.scrollTop = contentY * mapZoom - mouseViewportY;
+      zoomMapAtPoint(delta, pointX, pointY);
     },
     { passive: false }
   );
 
-  mapInner.addEventListener("click", (event) => {
-    const rect = mapInner.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width) * 100;
-    const y = ((event.clientY - rect.top) / rect.height) * 100;
+  mapViewport.addEventListener("mousedown", (event) => {
+    if (event.button !== 0) return;
+    isMapDragging = true;
+    mapDragMoved = false;
+    mapDragStartX = event.clientX;
+    mapDragStartY = event.clientY;
+    mapStartPanX = mapPanX;
+    mapStartPanY = mapPanY;
+    mapViewport.classList.add("dragging");
+  });
+
+  window.addEventListener("mousemove", (event) => {
+    if (!isMapDragging) return;
+
+    const dx = event.clientX - mapDragStartX;
+    const dy = event.clientY - mapDragStartY;
+
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      mapDragMoved = true;
+    }
+
+    mapPanX = mapStartPanX + dx;
+    mapPanY = mapStartPanY + dy;
+    clampMapPan();
+    updateMapTransform();
+  });
+
+  window.addEventListener("mouseup", () => {
+    isMapDragging = false;
+    mapViewport.classList.remove("dragging");
+  });
+
+  mapViewport.addEventListener("touchstart", (event) => {
+    if (event.touches.length !== 1) return;
+    isMapDragging = true;
+    mapDragMoved = false;
+    mapDragStartX = event.touches[0].clientX;
+    mapDragStartY = event.touches[0].clientY;
+    mapStartPanX = mapPanX;
+    mapStartPanY = mapPanY;
+  }, { passive: true });
+
+  window.addEventListener("touchmove", (event) => {
+    if (!isMapDragging || event.touches.length !== 1) return;
+
+    const dx = event.touches[0].clientX - mapDragStartX;
+    const dy = event.touches[0].clientY - mapDragStartY;
+
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+      mapDragMoved = true;
+    }
+
+    mapPanX = mapStartPanX + dx;
+    mapPanY = mapStartPanY + dy;
+    clampMapPan();
+    updateMapTransform();
+  }, { passive: true });
+
+  window.addEventListener("touchend", () => {
+    isMapDragging = false;
+  });
+
+  mapViewport.addEventListener("click", (event) => {
+    if (mapDragMoved) return;
+
+    const rect = mapViewport.getBoundingClientRect();
+    const viewportX = event.clientX - rect.left;
+    const viewportY = event.clientY - rect.top;
+
+    const localX = (viewportX - mapPanX) / mapZoom;
+    const localY = (viewportY - mapPanY) / mapZoom;
+
+    const x = clamp((localX / MAP_BASE_WIDTH) * 100, 0, 100);
+    const y = clamp((localY / MAP_BASE_HEIGHT) * 100, 0, 100);
 
     currentGuess = { x, y };
     setMarkerPosition(guessMarker, currentGuess);
@@ -184,6 +248,68 @@ function onWindowResize() {
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
+  clampMapPan();
+  updateMapTransform();
+}
+
+function updateMapTransform() {
+  mapInner.style.transform = `translate(${mapPanX}px, ${mapPanY}px) scale(${mapZoom})`;
+  zoomText.textContent = `Zoom: ${Math.round(mapZoom * 100)}%`;
+}
+
+function clampMapPan() {
+  const viewportWidth = mapViewport.clientWidth;
+  const viewportHeight = mapViewport.clientHeight;
+  const scaledWidth = MAP_BASE_WIDTH * mapZoom;
+  const scaledHeight = MAP_BASE_HEIGHT * mapZoom;
+
+  if (scaledWidth <= viewportWidth) {
+    mapPanX = (viewportWidth - scaledWidth) / 2;
+  } else {
+    const minPanX = viewportWidth - scaledWidth;
+    mapPanX = clamp(mapPanX, minPanX, 0);
+  }
+
+  if (scaledHeight <= viewportHeight) {
+    mapPanY = (viewportHeight - scaledHeight) / 2;
+  } else {
+    const minPanY = viewportHeight - scaledHeight;
+    mapPanY = clamp(mapPanY, minPanY, 0);
+  }
+}
+
+function centerMapOnPercent(xPercent, yPercent) {
+  const viewportWidth = mapViewport.clientWidth;
+  const viewportHeight = mapViewport.clientHeight;
+  const targetX = (xPercent / 100) * MAP_BASE_WIDTH * mapZoom;
+  const targetY = (yPercent / 100) * MAP_BASE_HEIGHT * mapZoom;
+
+  mapPanX = viewportWidth / 2 - targetX;
+  mapPanY = viewportHeight / 2 - targetY;
+
+  clampMapPan();
+  updateMapTransform();
+}
+
+function zoomMapAtPoint(delta, pointX, pointY) {
+  const oldZoom = mapZoom;
+  const newZoom = clamp(mapZoom + delta, MIN_MAP_ZOOM, MAX_MAP_ZOOM);
+  if (newZoom === oldZoom) return;
+
+  const worldX = (pointX - mapPanX) / oldZoom;
+  const worldY = (pointY - mapPanY) / oldZoom;
+
+  mapZoom = newZoom;
+  mapPanX = pointX - worldX * mapZoom;
+  mapPanY = pointY - worldY * mapZoom;
+
+  clampMapPan();
+  updateMapTransform();
+}
+
+function zoomMapAtViewportCenter(delta) {
+  const rect = mapViewport.getBoundingClientRect();
+  zoomMapAtPoint(delta, rect.width / 2, rect.height / 2);
 }
 
 function loadWorld() {
@@ -347,6 +473,9 @@ function startNewRound() {
   closeMapPanel();
   resultsUI.style.display = "none";
 
+  mapZoom = 1.5;
+  centerMapOnPercent(50, 50);
+
   moveCameraToRound(currentRound);
   updateHud();
 
@@ -366,36 +495,16 @@ function toggleMapPanel() {
 
 function openMapPanel() {
   mapPanel.style.display = "block";
+
+  if (currentGuess) {
+    centerMapOnPercent(currentGuess.x, currentGuess.y);
+  } else {
+    centerMapOnPercent(50, 50);
+  }
 }
 
 function closeMapPanel() {
   mapPanel.style.display = "none";
-}
-
-function updateMapZoom() {
-  mapInner.style.width = `${MAP_BASE_WIDTH * mapZoom}px`;
-  mapInner.style.height = `${MAP_BASE_HEIGHT * mapZoom}px`;
-  zoomText.textContent = `Zoom: ${Math.round(mapZoom * 100)}%`;
-}
-
-function zoomMapAtCenter(amount) {
-  const rect = mapViewport.getBoundingClientRect();
-  const oldZoom = mapZoom;
-  const newZoom = clamp(mapZoom + amount, MIN_MAP_ZOOM, MAX_MAP_ZOOM);
-
-  if (newZoom === oldZoom) return;
-
-  const centerViewportX = rect.width / 2;
-  const centerViewportY = rect.height / 2;
-
-  const contentX = (mapViewport.scrollLeft + centerViewportX) / oldZoom;
-  const contentY = (mapViewport.scrollTop + centerViewportY) / oldZoom;
-
-  mapZoom = newZoom;
-  updateMapZoom();
-
-  mapViewport.scrollLeft = contentX * mapZoom - centerViewportX;
-  mapViewport.scrollTop = contentY * mapZoom - centerViewportY;
 }
 
 function setMarkerPosition(marker, guess) {
