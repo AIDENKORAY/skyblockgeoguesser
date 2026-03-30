@@ -11,18 +11,96 @@
       height: 100%;
       overflow: hidden;
       background: #111;
+      font-family: Arial, sans-serif;
     }
 
     #status {
       position: fixed;
       top: 10px;
       left: 10px;
-      z-index: 10;
+      z-index: 20;
       color: white;
       background: rgba(0, 0, 0, 0.75);
-      padding: 10px 12px;
+      padding: 8px 12px;
       border-radius: 8px;
-      font-family: Arial, sans-serif;
+      display: none;
+    }
+
+    #menu {
+      position: fixed;
+      inset: 0;
+      z-index: 30;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background:
+        linear-gradient(rgba(0,0,0,0.55), rgba(0,0,0,0.75)),
+        radial-gradient(circle at top, #2a2a2a, #111 70%);
+    }
+
+    #menuCard {
+      width: min(90vw, 500px);
+      background: rgba(20, 20, 20, 0.92);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 18px;
+      padding: 28px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+      color: white;
+      text-align: center;
+    }
+
+    #menuCard h1 {
+      margin: 0 0 10px;
+      font-size: 2rem;
+    }
+
+    #menuCard p {
+      margin: 0 0 22px;
+      color: #cfcfcf;
+      line-height: 1.45;
+    }
+
+    .modeButtons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .modeButton {
+      border: none;
+      border-radius: 12px;
+      padding: 14px 16px;
+      font-size: 1rem;
+      cursor: pointer;
+      background: #2d6cdf;
+      color: white;
+      transition: transform 0.15s ease, opacity 0.15s ease;
+    }
+
+    .modeButton:hover {
+      transform: translateY(-2px);
+      opacity: 0.95;
+    }
+
+    .modeButton.secondary {
+      background: #333;
+    }
+
+    #hud {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      z-index: 20;
+      color: white;
+      background: rgba(0,0,0,0.75);
+      padding: 8px 12px;
+      border-radius: 8px;
+      display: none;
+    }
+
+    canvas {
+      display: block;
     }
   </style>
 
@@ -36,7 +114,26 @@
   </script>
 </head>
 <body>
+  <div id="menu">
+    <div id="menuCard">
+      <h1>Skyblock GeoGuessr</h1>
+      <p>
+        Pick a mode to start. The world will only load after you choose,
+        which helps the site run smoother.
+      </p>
+
+      <div class="modeButtons">
+        <button class="modeButton" data-mode="classic">Classic</button>
+        <button class="modeButton" data-mode="timed">Timed</button>
+        <button class="modeButton secondary" data-mode="free">Free Explore</button>
+        <button class="modeButton secondary" data-mode="hardcore">Hardcore</button>
+      </div>
+    </div>
+  </div>
+
   <div id="status">Starting...</div>
+  <div id="hud">Mode: <span id="currentMode">None</span></div>
+
   <script type="module" src="./script.js"></script>
 </body>
 </html>
