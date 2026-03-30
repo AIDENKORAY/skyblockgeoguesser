@@ -144,7 +144,8 @@
       color: #d4d4d4;
     }
 
-    #mapContainer {
+    #guessMapContainer,
+    #resultMapContainer {
       position: relative;
       margin: 20px auto;
       width: min(80vw, 700px);
@@ -152,8 +153,11 @@
       background: #333;
       overflow: hidden;
       border-radius: 12px;
-      cursor: crosshair;
       border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    #guessMapContainer {
+      cursor: crosshair;
     }
 
     #guessMap,
@@ -244,7 +248,7 @@
       <h2>Make Your Guess</h2>
       <p>Click on the map where you think you are.</p>
 
-      <div id="mapContainer">
+      <div id="guessMapContainer">
         <img id="guessMap" src="./topdown-map.jpg" alt="Top-down map" />
         <div id="guessMarker"></div>
       </div>
@@ -261,7 +265,7 @@
       <h2>Round Result</h2>
       <p id="resultText">Result goes here.</p>
 
-      <div id="mapContainer" style="cursor: default;">
+      <div id="resultMapContainer">
         <img id="resultMap" src="./topdown-map.jpg" alt="Result map" />
         <div id="resultGuessMarker"></div>
         <div id="actualMarker"></div>
