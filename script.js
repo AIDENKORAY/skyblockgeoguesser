@@ -97,80 +97,32 @@ const roundLocations = [
   }
 ];
 
-const calibration = buildMapCalibration();
+// Anchor point from your portal
+const PORTAL_WORLD = { x: 273, z: 203 };
+const PORTAL_MAP = { x: 52, y: 48 };
+
+// Tweak this if distances feel too small or too large
+const BLOCKS_PER_PERCENT = 6;
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-function buildMapCalibration() {
-  const mapXs = roundLocations.map((r) => r.map.x);
-  const mapYs = roundLocations.map((r) => r.map.y);
-  const worldXs = roundLocations.map((r) => r.world.x);
-  const worldZs = roundLocations.map((r) => r.world.z);
-
-  const minMapX = Math.min(...mapXs);
-  const maxMapX = Math.max(...mapXs);
-  const minMapY = Math.min(...mapYs);
-  const maxMapY = Math.max(...mapYs);
-
-  const minWorldX = Math.min(...worldXs);
-  const maxWorldX = Math.max(...worldXs);
-  const minWorldZ = Math.min(...worldZs);
-  const maxWorldZ = Math.max(...worldZs);
-
-  const mapSpanX = Math.max(0.0001, maxMapX - minMapX);
-  const mapSpanY = Math.max(0.0001, maxMapY - minMapY);
-  const worldSpanX = Math.max(1, maxWorldX - minWorldX);
-  const worldSpanZ = Math.max(1, maxWorldZ - minWorldZ);
-
-  return {
-    minMapX,
-    maxMapX,
-    minMapY,
-    maxMapY,
-    minWorldX,
-    maxWorldX,
-    minWorldZ,
-    maxWorldZ,
-    mapSpanX,
-    mapSpanY,
-    worldSpanX,
-    worldSpanZ,
-    percentPerBlockX: mapSpanX / worldSpanX,
-    percentPerBlockY: mapSpanY / worldSpanZ
-  };
-}
-
 function mapPercentToWorld(mapX, mapY) {
-  const tx = clamp(
-    (mapX - calibration.minMapX) / calibration.mapSpanX,
-    0,
-    1
-  );
+  const dxPercent = mapX - PORTAL_MAP.x;
+  const dzPercent = mapY - PORTAL_MAP.y;
 
-  const tz = clamp(
-    (mapY - calibration.minMapY) / calibration.mapSpanY,
-    0,
-    1
-  );
-
-  const worldX =
-    calibration.minWorldX + tx * calibration.worldSpanX;
-
-  const worldZ =
-    calibration.minWorldZ + tz * calibration.worldSpanZ;
+  const worldX = PORTAL_WORLD.x + dxPercent * BLOCKS_PER_PERCENT;
+  const worldZ = PORTAL_WORLD.z + dzPercent * BLOCKS_PER_PERCENT;
 
   return { x: worldX, z: worldZ };
 }
 
 function getMarkerSizePercent() {
-  const widthPercent = Math.max(calibration.percentPerBlockX, 0.12);
-  const heightPercent = Math.max(calibration.percentPerBlockY, 0.12);
-
+  const blockPercent = Math.max(1 / BLOCKS_PER_PERCENT, 0.12);
   return {
-    widthPercent,
-    heightPercent
+    widthPercent: blockPercent,
+    heightPercent: blockPercent
   };
 }
 
@@ -708,7 +660,7 @@ function calculateScore(distanceBlocks) {
 
 function showResults(distanceBlocks, score) {
   resultText.textContent =
-    `You were ${distanceBlocks.toFixed(1)} blocks away. ` +
+    `You were ${Math.round(distanceBlocks)} blocks away. ` +
     `You earned ${score} points. ` +
     `Actual location: ${currentRound.name}.`;
 
